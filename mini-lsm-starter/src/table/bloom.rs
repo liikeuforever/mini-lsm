@@ -72,15 +72,22 @@ impl Bloom {
     /// Build bloom filter from key hashes
     pub fn build_from_key_hashes(keys: &[u32], bits_per_key: usize) -> Self {
         let k = (bits_per_key as f64 * 0.69) as u32;
+        let k = (bits_per_key as f64 * 0.69) as u32;
         let k = k.min(30).max(1);
         let nbits = (keys.len() * bits_per_key).max(64);
         let nbytes = (nbits + 7) / 8;
         let nbits = nbytes * 8;
         let mut filter = BytesMut::with_capacity(nbytes);
         filter.resize(nbytes, 0);
-
-        // TODO: build the bloom filter
-
+        for h in keys {
+            let mut h = *h;
+            let delta = (h >> 17) | (h << 15);
+            for _ in 0..k {
+                let bit_pos = (h as usize) % nbits;
+                filter.set_bit(bit_pos, true);
+                h = h.wrapping_add(delta);
+            }
+        }
         Self {
             filter: filter.freeze(),
             k: k as u8,
@@ -88,16 +95,20 @@ impl Bloom {
     }
 
     /// Check if a bloom filter may contain some data
-    pub fn may_contain(&self, h: u32) -> bool {
+    pub fn may_contain(&self, mut h: u32) -> bool {
         if self.k > 30 {
             // potential new encoding for short bloom filters
             true
         } else {
             let nbits = self.filter.bit_len();
             let delta = (h >> 17) | (h << 15);
-
-            // TODO: probe the bloom filter
-
+            for _ in 0..self.k {
+                let bit_pos = h % (nbits as u32);
+                if !self.filter.get_bit(bit_pos as usize) {
+                    return false;
+                }
+                h = h.wrapping_add(delta);
+            }
             true
         }
     }
